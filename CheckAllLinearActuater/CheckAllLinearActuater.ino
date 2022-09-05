@@ -19,9 +19,9 @@
 //ユーザ設定<全体節共通>
 #define AC_TIME 400 //加速時間[ms]
 //#define TRAVEL_SPEED 0.08      //移動速度[mm/ms]
-#define TRAVEL_SPEED 0.04      //移動速度[mm/ms]
+#define TRAVEL_SPEED 0.16      //移動速度[mm/ms]
 #define MIN_TRAVEL_SPEED 0.001 //開始速度[mm/ms]
-#define TRAVEL_STEP 7800       //移動距離の設定
+#define TRAVEL_STEP 7500       //移動距離の設定
 
 /*LinearClassのstaicデータメンバの初期化*/
 int LinearClass::t_cl = T_CL;

@@ -55,8 +55,8 @@ const uint8_t DXL_DIR_PIN = 2; // DYNAMIXEL Shield DIR PIN
 #define LINEAR_WAIT_TIME 4000
 
 /*ロボット脚部モータのパラメータ*/
-#define CLOSE_ANGLE 2200 //機構上の最大角度（閉脚時の角度2200
-//#define CLOSE_ANGLE 1400  //機構上の最小角度（開脚時の角度)
+//#define CLOSE_ANGLE 2200 //機構上の最大角度（閉脚時の角度2200
+#define CLOSE_ANGLE 1400  //機構上の最小角度（開脚時の角度)
 #define OPEN_ANGLE 1024  //機構上の最小角度（開脚時の角度)
 #define POSITION_PGAIN 800
 #define MIN_LENGTH 180    //リニアアクチュエータの最小伸展時（サーボモータの角度）

@@ -17,7 +17,7 @@ class LinearClass {
     /*コンストラクタで定義される各インスタンスの変数*/
     int dir_pin; //ボードの方向ピン
     int clc_pin; //ボードのクロックピン
-    int travel_step;  //移動距離
+    int travel_step;  //移動予定のステップ量
     double travel_speed;//移動速度[mm/ms]
 
     LinearClass(int d, int c, double tspeed, int tstep); //コンストラクタ
