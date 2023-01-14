@@ -52,16 +52,16 @@ const uint8_t DXL_DIR_PIN = 2; // DYNAMIXEL Shield DIR PIN
 
 /*待ち時間の設定*/
 #define LEG_WAIT_TIME 700
-#define LINEAR_WAIT_TIME 4000
+#define LINEAR_WAIT_TIME 100
 
 /*ロボット脚部モータのパラメータ*/
-//#define CLOSE_ANGLE 2200 //機構上の最大角度（閉脚時の角度2200
-#define CLOSE_ANGLE 1400  //機構上の最小角度（開脚時の角度)
+#define CLOSE_ANGLE 2200 //機構上の最大角度（閉脚時の角度)2200
+//#define CLOSE_ANGLE 1650  //機構上の最小角度（開脚時の角度)(上昇時)
 #define OPEN_ANGLE 1024  //機構上の最小角度（開脚時の角度)
 #define POSITION_PGAIN 800
 #define MIN_LENGTH 180    //リニアアクチュエータの最小伸展時（サーボモータの角度）
 #define MAX_LENGTH 0      //リニアアクチュエータの最大伸展時（サーボモータの角度）
-#define LIMIT_CURRENT 250 //モータの電流値がこの値に制限される（壁との接触時に指定したトルクで押しつけ可能）
+#define LIMIT_CURRENT 150 //モータの電流値がこの値に制限される（壁との接触時に指定したトルクで押しつけ可能）
 
 /*shadow_IDを利用してコントロールする*/
 const uint8_t FIRST_SEGMENT_SHADOW_ID = 1;
@@ -69,7 +69,7 @@ const uint8_t SECOND_SEGMENT_SHADOW_ID = 4;
 const uint8_t THIRD_SEGMENT_SHADOW_ID = 7;
 
 int32_t Acceleration_Limit = 50; //最大化加速度が右の値に制限　Acceleration [rpm²] = Value * 214.577
-int32_t Velocity_Limit = 250;    //最大速度が右の値に制限　Velocity [rpm] = Value * 0.229 [rpm]
+int32_t Velocity_Limit = 150;    //最大速度が右の値に制限　Velocity [rpm] = Value * 0.229 [rpm]
 
 const float DXL_PROTOCOL_VERSION = 2.0;
 
@@ -78,7 +78,7 @@ Dynamixel2Arduino dxl(DXL_SERIAL, DXL_DIR_PIN);
 // This namespace is required to use Control table item names
 using namespace ControlTableItem;
 
-/*リニアアクチュエータの初期パラメータなど*/
+/*リニアアクチュエータの初期パラメータ設定 ここから*/
 #include "NPM_Library.h" //ライブラリの読み込み
 
 //ボードのピン設定
@@ -92,28 +92,53 @@ using namespace ControlTableItem;
 //モータドライバとモータの仕様に準じる
 #define T_CL 10         // CLKパルスのLo/Hiレベル応答幅[µs]
 #define ONESTEP_DEG 1.8 // 1ステップ（パルス）あたりの移動角度[degree]
+#define LEAD 1          //ねじリード．ネジが1回転したときに進む距離[mm]
 
 //ユーザ設定<全体節共通>
-#define AC_TIME 800 //加速時間[ms]
-//#define TRAVEL_SPEED 0.08      //移動速度[mm/ms]
-#define TRAVEL_SPEED 0.03      //移動速度[mm/ms]
+#define AC_TIME 600 //加速時間[ms]
+#define TRAVEL_SPEED 0.16      //移動速度[mm/ms]
 #define MIN_TRAVEL_SPEED 0.001 //開始速度[mm/ms]
-#define TRAVEL_STEP 7800       //移動距離の設定
+#define TRAVEL_STEP 7400       //移動距離の設定
 
 /*LinearClassのstaicデータメンバの初期化*/
 int LinearClass::t_cl = T_CL;
 double LinearClass::onestep_deg = ONESTEP_DEG;
-double LinearClass::min_travel_speed = MIN_TRAVEL_SPEED;
+double LinearClass::start_travel_speed = MIN_TRAVEL_SPEED;
 int LinearClass::ac_time = AC_TIME;
+int LinearClass::lead = LEAD;
 
 LinearClass Seg1_Linear(SEG1_DIR, SEG1_CLK, TRAVEL_SPEED, TRAVEL_STEP);
 LinearClass Seg2_Linear(SEG2_DIR, SEG2_CLK, TRAVEL_SPEED, TRAVEL_STEP);
 LinearClass Seg3_Linear(SEG3_DIR, SEG3_CLK, TRAVEL_SPEED, TRAVEL_STEP);
-
+/*ここまで*/
 
 
 /*状態遷移*/
 int state;
+
+void wait_serial(){
+    DEBUG_SERIAL.println("input 1 and go to next state");
+    DEBUG_SERIAL.println("waiting");
+    while(1){  
+        if ( DEBUG_SERIAL.available() ) {       // 受信データがあるか？
+          if(DEBUG_SERIAL.read()==49){
+            break;
+            }
+          }
+        }            // データが無いときは呼ばれない
+  
+}
+
+bool finish_serial(){
+  if (DEBUG_SERIAL.available() && DEBUG_SERIAL.read() == 48){ // 受信データがあるか？
+      return true;
+    }
+  else{
+    return false;
+  }
+}
+
+void(*resetFunc)(void) = 0;
 
 void setup()
 {
@@ -121,9 +146,9 @@ void setup()
 
   // Use UART port of DYNAMIXEL Shield to debug.
   DEBUG_SERIAL.begin(115200);
-  
+  DEBUG_SERIAL.println("If you enter 0, the robot will stop moving");
   // Set Port baudrate to 115200bps. This has to match with DYNAMIXEL baudrate.
-  dxl.begin(115200);
+  dxl.begin(57600);
   // Set Port Protocol Version. This has to match with DYNAMIXEL protocol version.
   dxl.setPortProtocolVersion(DXL_PROTOCOL_VERSION);
   // Get DYNAMIXEL information
@@ -131,72 +156,91 @@ void setup()
 
   // Turn off torque when configuring items in EEPROM area
   dxl.torqueOff(254);
-  dxl.writeControlTableItem(SHUTDOWN, 254, 52);
+  dxl.writeControlTableItem(SHUTDOWN, 254, 20);
   dxl.setOperatingMode(254, OP_CURRENT_BASED_POSITION);
   dxl.writeControlTableItem(PROFILE_ACCELERATION, 254, Acceleration_Limit); //最大化加速度が右の値に制限　Acceleration [rpm²] = Value * 214.577
   dxl.writeControlTableItem(PROFILE_VELOCITY, 254, Velocity_Limit);         //最大速度が右の値に制限　Velocity [rpm] = Value * 0.229 [rpm]
-  dxl.torqueOn(254);
-  dxl.setGoalPosition(254, CLOSE_ANGLE);
   dxl.setGoalCurrent(254, LIMIT_CURRENT);
+  DEBUG_SERIAL.println("Program START");
+  dxl.torqueOn(254);
+  dxl.setGoalPosition(254, 2200);
+  wait_serial();
+  delay(2000);
+  dxl.setGoalPosition(254, OPEN_ANGLE);
+  wait_serial();
 
   state = 1;
-  DEBUG_SERIAL.println("Program START");
+  
   delay(2000);
 }
 
-LinearClass LinearArray[] ={Seg1_Linear,Seg2_Linear}; //LinearClassの配列．複数のリニアアクチュエータを同時に利用する際に利用．
+LinearClass LinearArray[] ={Seg1_Linear,Seg3_Linear}; //LinearClassの配列．複数のリニアアクチュエータを同時に利用する際に利用．
 //なんかローカル変数だとエラーが出るのでグローバルに！！
 void loop()
 {
 
   switch (state)
   {
+  
   case 1: // 1体節目閉脚，2体節目開脚，3体節目開脚
-  DEBUG_SERIAL.println("state1");
-  dxl.setGoalPosition(FIRST_SEGMENT_SHADOW_ID, CLOSE_ANGLE);
+    DEBUG_SERIAL.println("state1");
     dxl.setGoalPosition(SECOND_SEGMENT_SHADOW_ID, OPEN_ANGLE);
+    delay(10);
     dxl.setGoalPosition(THIRD_SEGMENT_SHADOW_ID, OPEN_ANGLE);
+    delay(LEG_WAIT_TIME);
+    dxl.setGoalPosition(FIRST_SEGMENT_SHADOW_ID, CLOSE_ANGLE);
     delay(LEG_WAIT_TIME);
     state = 2;
     break;
 
   case 2: // 1体節目伸展
-  DEBUG_SERIAL.println("state2");
+    DEBUG_SERIAL.println("state2");
     digitalWrite(Seg1_Linear.dir_pin, LOW); //伸展方向
-    Seg1_Linear.acceleration_move();
+    Seg1_Linear.single_move();
     state = 3;
     break;
 
   case 3: // 1体節目開脚，2体節目閉脚
-  DEBUG_SERIAL.println("state3");
+    DEBUG_SERIAL.println("state3");
     dxl.setGoalPosition(FIRST_SEGMENT_SHADOW_ID, OPEN_ANGLE);
+    delay(LEG_WAIT_TIME);
     dxl.setGoalPosition(SECOND_SEGMENT_SHADOW_ID, CLOSE_ANGLE);
     delay(LEG_WAIT_TIME);
     state = 4;
     break;
 
   case 4: // 1体節目収縮，2体節目伸展
-  DEBUG_SERIAL.println("state4");
+    DEBUG_SERIAL.println("state4");
     digitalWrite(Seg1_Linear.dir_pin, HIGH);  //収縮方向
-    digitalWrite(Seg2_Linear.dir_pin, LOW);   //伸展方向
-    
-    multi_acceleration_move(LinearArray, 2);
+    digitalWrite(Seg3_Linear.dir_pin, LOW);   //伸展方向
+    multi_move(LinearArray, 2);
     state = 5;
     break;
 
   case 5: //  2体節目開脚，3体節目閉脚
-  DEBUG_SERIAL.println("state5");
+    DEBUG_SERIAL.println("state5");
     dxl.setGoalPosition(SECOND_SEGMENT_SHADOW_ID, OPEN_ANGLE);
+    delay(LEG_WAIT_TIME);
     dxl.setGoalPosition(THIRD_SEGMENT_SHADOW_ID, CLOSE_ANGLE);
     delay(LEG_WAIT_TIME);
     state = 6;
     break;
 
   case 6: // 2体節目収縮
-  DEBUG_SERIAL.println("state6");
-    digitalWrite(Seg2_Linear.dir_pin, HIGH);//収縮方向
-    Seg2_Linear.acceleration_move();
+    DEBUG_SERIAL.println("state6");
+    digitalWrite(Seg3_Linear.dir_pin, HIGH);//収縮方向
+    Seg3_Linear.single_move();
+    if(finish_serial() == true){
+      state =0;
+    }else{
     state = 1;
+    }
+    break;
+
+  case 0:
+    DEBUG_SERIAL.println("finish");
+    wait_serial();
+     resetFunc();
     break;
   }
 }
